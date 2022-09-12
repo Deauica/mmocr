@@ -5,11 +5,11 @@ import cv2
 import numpy as np
 import torch
 from mmcv.ops import pixel_group
-from mmengine.data import InstanceData
+from mmengine.structures import InstanceData
 
-from mmocr.data import TextDetDataSample
 from mmocr.registry import MODELS
-from .base_postprocessor import BaseTextDetPostProcessor
+from mmocr.structures import TextDetDataSample
+from .base import BaseTextDetPostProcessor
 
 
 @MODELS.register_module()
