@@ -6,8 +6,10 @@ from .fce_head import FCEHead
 from .pan_head import PANHead
 from .pse_head import PSEHead
 from .textsnake_head import TextSnakeHead
+from .fewnet_head import FewNetHead, FeatureGrouping, FeatureSampling
 
 __all__ = [
     'PSEHead', 'PANHead', 'DBHead', 'FCEHead', 'TextSnakeHead', 'DRRGHead',
-    'BaseTextDetHead'
+    "FewNetHead", "FeatureGrouping", "FeatureSampling", 
+    'BaseTextDetHead', 
 ]

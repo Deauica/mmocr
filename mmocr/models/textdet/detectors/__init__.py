@@ -7,8 +7,9 @@ from .panet import PANet
 from .psenet import PSENet
 from .single_stage_text_detector import SingleStageTextDetector
 from .textsnake import TextSnake
+from .fewnet import FewNet
 
 __all__ = [
     'SingleStageTextDetector', 'DBNet', 'PANet', 'PSENet', 'TextSnake',
-    'FCENet', 'DRRG', 'MMDetWrapper'
+    'FCENet', 'DRRG', 'MMDetWrapper', 'FewNet'
 ]

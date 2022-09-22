@@ -313,10 +313,10 @@ class SourceImagePad(BaseTransform):
             Defaults to 1./9.
     """
 
-    def __init__(self,
-                 target_scale: Union[int, Tuple[int, int]],
-                 crop_ratio: Union[float, Tuple[float,
-                                                float]] = 1. / 9) -> None:
+    def __init__(
+            self,
+            target_scale: Union[int, Tuple[int, int]],
+            crop_ratio: Union[float, Tuple[float, float]] = 1. / 9) -> None:
         self.target_scale = target_scale if isinstance(
             target_scale, tuple) else (target_scale, target_scale)
         self.crop_ratio = crop_ratio if isinstance(

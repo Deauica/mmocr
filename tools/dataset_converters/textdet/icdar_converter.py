@@ -168,7 +168,9 @@ def main():
     set_name = {}
     for split in args.split_list:
         set_name.update({split: 'instances_' + split + '.json'})
-        assert osp.exists(osp.join(img_dir, split))
+        assert osp.exists(osp.join(img_dir, split)), (
+            "Path is: {}".format(osp.join(img_dir, split))
+        )
 
     for split, json_name in set_name.items():
         print(f'Converting {split} into {json_name}')
