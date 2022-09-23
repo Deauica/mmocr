@@ -10,7 +10,7 @@ randomness = dict(seed=20)
 
 # optimizer
 optim_wrapper = dict(
-    optimizer=dict(type='Adam', lr=1e-4, weight_decay=1e-4),
+    optimizer=dict(type='AdamW', lr=1e-4, weight_decay=1e-4),
     custom_keys={
         "feature_grouping": dict(lr=5e-4)
     }
