@@ -5,8 +5,20 @@ _base_ = [
     '_base_fewnet_resnet50-fpn.py',
 ]
 
-# basic runtime setting
+# seed
 randomness = dict(seed=20)
+
+# optimizer
+optim_wrapper = dict(
+    optimizer=dict(type='Adam', lr=1e-4, weight_decay=1e-4),
+    custom_keys={
+        "feature_grouping": dict(lr=5e-4)
+    }
+)
+train_cfg = dict(type='EpochBasedTrainLoop', max_epochs=400, val_interval=20)
+param_scheduler = [
+    dict(type='PolyLR', power=0.9, end=400),
+]
 
 # model -- simplified version
 model = dict(
