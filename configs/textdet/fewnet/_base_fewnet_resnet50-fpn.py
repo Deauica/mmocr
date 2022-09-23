@@ -5,19 +5,17 @@ inner_channels = 256
 model_dim = 512
 
 model = dict(
-    type='FewNet',
-    backbone=dict(  # Apdapted from DBNet
+    backbone=dict(
         type='mmdet.ResNet',
         depth=50,
         num_stages=4,
         out_indices=(0, 1, 2, 3),
-        frozen_stages=-1,
+        frozen_stages=1,
         norm_cfg=dict(type='BN', requires_grad=True),
-        norm_eval=False,
-        style='pytorch',
-        dcn=dict(type='DCNv2', deform_groups=1, fallback_on_stride=False),
+        norm_eval=True,
+        style='caffe',
         init_cfg=dict(type='Pretrained', checkpoint='torchvision://resnet50'),
-        stage_with_dcn=(False, True, True, True)),
+    ),
     
     neck=dict(
         type='mmdet.FPN', in_channels=[256, 512, 1024, 2048],
@@ -95,7 +93,7 @@ train_pipeline = [
     ),
     dict(
         type="Resize",
-        scale=[1280, 1280], keep_ratio=True  # keep_ratio is True
+        scale=[1280, 1280], keep_ratio=False  # keep_ratio is True
     ),
     dict(
         type='PackTextDetInputs',  # PackTextDetInputs has no batch op 

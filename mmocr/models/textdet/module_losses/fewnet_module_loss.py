@@ -336,7 +336,12 @@ class FewNetModuleLoss(nn.Module):
     
         t = OrderedDict()  # [num_tgt_boxes, ...]
         for k in _targets.keys():
-            t[k] = _targets[k][batch_idx, tgt_idx]
+            try:
+                t[k] = _targets[k][batch_idx, tgt_idx]
+            except Exception as e:
+                import pdb
+                pdb.set_trace()
+            
         return t
 
     def loss_logits(self, out_matched_logits, out_matched_boxes, tgt_matched_boxes,
