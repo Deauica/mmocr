@@ -6,9 +6,11 @@ from .fce_postprocessor import FCEPostprocessor
 from .pan_postprocessor import PANPostprocessor
 from .pse_postprocessor import PSEPostprocessor
 from .textsnake_postprocessor import TextSnakePostprocessor
+from .fewnet_postprocessor import FewNetPostprocessor
 
 __all__ = [
     'PSEPostprocessor', 'PANPostprocessor', 'DBPostprocessor',
     'DRRGPostprocessor', 'FCEPostprocessor', 'TextSnakePostprocessor',
+    'FewNetPostprocessor',
     'BaseTextDetPostProcessor'
 ]

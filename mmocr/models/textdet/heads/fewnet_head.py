@@ -11,12 +11,11 @@ from torch import nn
 from collections import OrderedDict
 import warnings
 
-@MODELS.register_module()
+
 class CoordConv(nn.Module):
     pass 
 
 
-@MODELS.register_module()
 class PositionalEmbedding(nn.Module):
     def __init__(self,
                  max_pos_len=3000, pos_dim=None, num_dims=2,
@@ -76,7 +75,6 @@ class PositionalEmbedding(nn.Module):
         return nn.ModuleDict(embed_tables)
 
 
-@MODELS.register_module()
 class FeatureGrouping(nn.Module):
     """
     4 transformer encoder layers.
@@ -123,7 +121,7 @@ class FeatureGrouping(nn.Module):
         descriptors = self.encoder(descriptors)  # [Nk, B, model_dim], Nk = \sum_i {nk_i}
         return descriptors.permute(1, 0, 2).contiguous()  # [B, Nk, model_dim]
 
-@MODELS.register_module()
+
 class FeatureSampling(nn.Module):
     """
     1. coord_conv,
@@ -244,16 +242,16 @@ class FewNetHead(BaseTextDetHead):
         super().__init__(module_loss, postprocessor, init_cfg)
 
         assert (isinstance(feature_sampling, (nn.Module, Dict)) and 
-                isinstance(feature_grouping, (nn.Module, Dict))) (
+                isinstance(feature_grouping, (nn.Module, Dict))), (
             "Please check the parameter for feature_sampling and feature_grouping"
             "Due to your feature_sampling and feature_grouping  are: {}, {}".format(
                 feature_sampling, feature_grouping))
         self.feature_sampling = ( 
-            MODELS.build(feature_sampling) if isinstance(feature_sampling, Dict) else 
+            FeatureSampling(**feature_sampling) if isinstance(feature_sampling, Dict) else
             feature_sampling 
         )
         self.feature_grouping = (
-            MODELS.build(feature_grouping) if isinstance(feature_grouping, Dict) else 
+            FeatureGrouping(**feature_grouping) if isinstance(feature_grouping, Dict) else
             feature_grouping
         )
         self.target_mode = target_mode
@@ -300,7 +298,9 @@ class FewNetHead(BaseTextDetHead):
         )
         return out 
 
-    def loss(self, features: Tuple[torch.Tensor], batch_data_samples: DetSampleList) -> Dict:
+    def loss(self,
+             features: Tuple[torch.Tensor], batch_data_samples: DetSampleList
+    ) -> Dict:
         outs = self(features, batch_data_samples, mode="loss")
         loss_dict = self.module_loss(outs, batch_data_samples)
         return loss_dict 
@@ -317,7 +317,8 @@ class FewNetHead(BaseTextDetHead):
 
     def predict(
         self, 
-        features: Tuple[torch.Tensor], batch_data_samples: DetSampleList) -> DetSampleList:
+        features: Tuple[torch.Tensor], batch_data_samples: DetSampleList
+    ) -> DetSampleList:
         outs = self(features, batch_data_samples, mode='predict')
         preds = self.postprocessor(outs, batch_data_samples)
         return preds

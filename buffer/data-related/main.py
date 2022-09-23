@@ -1,6 +1,6 @@
 # data related operation 
 
-stage = 3
+stage = 4
 
 if stage == 1: 
     """
@@ -10,8 +10,7 @@ if stage == 1:
     """
     from mmengine.structures.base_data_element import BaseDataElement
     import torch 
-    from collections import OrderedDict 
-
+    
     # 1. Create 
     gt_instances = BaseDataElement()
     print("raw gt_instances: {}".format(gt_instances))
@@ -93,8 +92,7 @@ elif stage == 3:
     """
     from mmengine.structures import InstanceData
     import torch 
-    import numpy as np 
-
+    
     # 0. InstanceData 的数据校验 
     # 当前的 InstanceData 的属性访问方式，是按照 .attribute 的方式访问的
     img_meta = dict(img_shape=(800, 800, 3), pad_shape=(800, 1216, 3))
@@ -136,3 +134,9 @@ elif stage == 3:
 
     instance_data3 = InstanceData.cat([instance_data1, instance_data2])
     print(instance_data1, "\n", instance_data2, "\n", instance_data3)
+
+elif stage == 4:
+    """ test for the PixelData """
+    from mmengine.structures.pixel_data import PixelData
+    
+    pass

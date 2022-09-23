@@ -9,8 +9,10 @@ import copy
 import functools
 from shapely.geometry import Polygon as plg
 from copy import deepcopy
+import cv2
 
 from scipy.optimize import linear_sum_assignment
+
 
 class HungarianMatcher(nn.Module):
     def __init__(self,
@@ -94,6 +96,7 @@ class HungarianMatcher(nn.Module):
         indices = [linear_sum_assignment(c[i]) for i, c in enumerate(cost_matrix.split(sizes, -1))]
         return [(torch.as_tensor(i, dtype=torch.int64), torch.as_tensor(j, dtype=torch.int64))
                 for i, j in indices], cost_matrix.split(sizes, -1)
+
 
 def xy_wh_r_2_xy_sigma(xywhr):
     """Convert oriented bounding box to 2-D Gaussian distribution.
@@ -200,6 +203,7 @@ def scaled_preprocess(preds, targets):
         "Your preds.shape and targets.shape: {}, {}".format(preds.shape, targets.shape)
     )
     target_areas = targets[:, 2] * targets[:, 3]  # [N]
+    target_areas = torch.sqrt(target_areas)  # acquire the sqrt of area
     targets[:, 2] = targets[:, 2] / target_areas
     targets[:, 3] = targets[:, 3] / target_areas
     preds[:, 2] = preds[:, 2] / target_areas
@@ -233,7 +237,7 @@ class GDLoss(nn.Module):
                  alpha=1.0,
                  reduction='mean',
                  loss_weight=1.0,
-                 scaled=False,   # False for scaled due to the convergence issue
+                 need_scaled_gwd=False,   # False for scaled due to the convergence issue
                  **kwargs):
         super(GDLoss, self).__init__()
         assert reduction in ['none', 'sum', 'mean']
@@ -241,9 +245,9 @@ class GDLoss(nn.Module):
         assert loss_type in self.BAG_GD_LOSS
         self.loss = self.BAG_GD_LOSS[loss_type]
         self.preprocess = self.BAG_PREP[representation]
-        self.fun, self,tau, self.alpha = fun, tau, alpha 
+        self.fun, self.tau, self.alpha = fun, tau, alpha
         self.reduction, self.loss_weight = reduction, loss_weight 
-        self.scaled = scaled
+        self.need_scaled_gwd = need_scaled_gwd
         self.kwargs = kwargs
 
     def forward(self,
@@ -276,7 +280,7 @@ class GDLoss(nn.Module):
         _kwargs = deepcopy(self.kwargs)
         _kwargs.update(kwargs)
         
-        if self.scaled:
+        if self.need_scaled_gwd:
             pred, target = scaled_preprocess(pred, target)
         
         pred = self.preprocess(pred)
@@ -286,3 +290,286 @@ class GDLoss(nn.Module):
             pred, target,
             fun=self.fun, tau=self.tau, alpha=self.alpha,
             reduction=reduction, **_kwargs) * self.loss_weight
+
+
+# for box utils
+def poly2obb_np(polys, version='oc'):
+    """Convert polygons to oriented bounding boxes.
+
+    Args:
+        polys (ndarray): [x0,y0,x1,y1,x2,y2,x3,y3]
+        version (Str): angle representations.
+
+    Returns:
+        obbs (ndarray): [x_ctr,y_ctr,w,h,angle]
+    """
+    if version == 'oc':
+        results = poly2obb_np_oc(polys)
+    elif version == 'le135':
+        results = poly2obb_np_le135(polys)
+    elif version == 'le90':
+        results = poly2obb_np_le90(polys)
+    else:
+        raise NotImplementedError
+    return results
+
+
+def poly2obb_np_le135(poly):
+    """Convert polygons to oriented bounding boxes.
+
+    Args:
+        polys (ndarray): [x0,y0,x1,y1,x2,y2,x3,y3]
+
+    Returns:
+        obbs (ndarray): [x_ctr,y_ctr,w,h,angle]
+    """
+    poly = np.array(poly[:8], dtype=np.float32)
+    pt1 = (poly[0], poly[1])
+    pt2 = (poly[2], poly[3])
+    pt3 = (poly[4], poly[5])
+    pt4 = (poly[6], poly[7])
+    edge1 = np.sqrt((pt1[0] - pt2[0]) * (pt1[0] - pt2[0]) + (pt1[1] - pt2[1]) *
+                    (pt1[1] - pt2[1]))
+    edge2 = np.sqrt((pt2[0] - pt3[0]) * (pt2[0] - pt3[0]) + (pt2[1] - pt3[1]) *
+                    (pt2[1] - pt3[1]))
+    # if edge1 < 2 or edge2 < 2:
+    #     return
+    assert edge1 >= 2 and edge2 >= 2, (
+        "edge1: {}, edge2: {}".format(edge1, edge2)
+    )
+    
+    width = max(edge1, edge2)
+    height = min(edge1, edge2)
+    angle = 0
+    if edge1 > edge2:
+        angle = np.arctan2(float(pt2[1] - pt1[1]), float(pt2[0] - pt1[0]))
+    elif edge2 >= edge1:
+        angle = np.arctan2(float(pt4[1] - pt1[1]), float(pt4[0] - pt1[0]))
+    angle = norm_angle(angle, 'le135')
+    x_ctr = float(pt1[0] + pt3[0]) / 2
+    y_ctr = float(pt1[1] + pt3[1]) / 2
+    return x_ctr, y_ctr, width, height, angle
+
+
+def poly2obb_np_le90(poly):
+    """Convert polygons to oriented bounding boxes.
+
+    Args:
+        polys (ndarray): [x0,y0,x1,y1,x2,y2,x3,y3]
+
+    Returns:
+        obbs (ndarray): [x_ctr,y_ctr,w,h,angle]
+    """
+    bboxps = np.array(poly).reshape((4, 2))
+    rbbox = cv2.minAreaRect(bboxps)
+    x, y, w, h, a = rbbox[0][0], rbbox[0][1], rbbox[1][0], rbbox[1][1], rbbox[
+        2]
+    if w < 2 or h < 2:
+        return
+    a = a / 180 * np.pi
+    if w < h:
+        w, h = h, w
+        a += np.pi / 2
+    while not np.pi / 2 > a >= -np.pi / 2:
+        if a >= np.pi / 2:
+            a -= np.pi
+        else:
+            a += np.pi
+    assert np.pi / 2 > a >= -np.pi / 2
+    return x, y, w, h, a
+
+def poly2obb_np_oc(poly):
+    """Convert polygons to oriented bounding boxes.
+
+    Args:
+        polys (ndarray): [x0,y0,x1,y1,x2,y2,x3,y3]
+
+    Returns:
+        obbs (ndarray): [x_ctr,y_ctr,w,h,angle]
+    """
+    bboxps = np.array(poly).reshape((4, 2))
+    rbbox = cv2.minAreaRect(bboxps)
+    x, y, w, h, a = rbbox[0][0], rbbox[0][1], rbbox[1][0], rbbox[1][1], rbbox[2]
+    if w < 2 or h < 2:
+        return
+    while not 0 < a <= 90:
+        if a == -90:
+            a += 180
+        else:
+            a += 90
+            w, h = h, w
+    a = a / 180 * np.pi
+    assert 0 < a <= np.pi / 2
+    return x, y, w, h, a
+
+
+def norm_angle(angle, angle_range):
+    """Limit the range of angles.
+
+    Args:
+        angle (ndarray): shape(n, ).
+        angle_range (Str): angle representations.
+
+    Returns:
+        angle (ndarray): shape(n, ).
+    """
+    if angle_range == 'oc':
+        return angle
+    elif angle_range == 'le135':
+        return (angle + np.pi / 4) % np.pi - np.pi / 4
+    elif angle_range == 'le90':
+        return (angle + np.pi / 2) % np.pi - np.pi / 2
+    else:
+        print('Not yet implemented.')
+
+
+def obb2poly(rbboxes, version='oc'):
+    """Convert oriented bounding boxes to polygons.
+    Args:
+        obbs (torch.Tensor): [x_ctr,y_ctr,w,h,angle]
+        version (Str): angle representations.
+    Returns:
+        polys (torch.Tensor): [x0,y0,x1,y1,x2,y2,x3,y3]
+    """
+    if version == 'oc':
+        results = obb2poly_oc(rbboxes)
+    elif version == 'le135':
+        results = obb2poly_le135(rbboxes)
+    elif version == 'le90':
+        results = obb2poly_le90(rbboxes)
+    else:
+        raise NotImplementedError
+    return results
+
+
+def obb2poly_oc(rboxes):
+    """Convert oriented bounding boxes to polygons.
+    Args:
+        obbs (torch.Tensor): [x_ctr,y_ctr,w,h,angle]
+    Returns:
+        polys (torch.Tensor): [x0,y0,x1,y1,x2,y2,x3,y3]
+    """
+    x = rboxes[:, 0]
+    y = rboxes[:, 1]
+    w = rboxes[:, 2]
+    h = rboxes[:, 3]
+    a = rboxes[:, 4]
+    cosa = torch.cos(a)
+    sina = torch.sin(a)
+    wx, wy = w / 2 * cosa, w / 2 * sina
+    hx, hy = -h / 2 * sina, h / 2 * cosa
+    p1x, p1y = x - wx - hx, y - wy - hy
+    p2x, p2y = x + wx - hx, y + wy - hy
+    p3x, p3y = x + wx + hx, y + wy + hy
+    p4x, p4y = x - wx + hx, y - wy + hy
+    return torch.stack([p1x, p1y, p2x, p2y, p3x, p3y, p4x, p4y], dim=-1)
+
+
+def obb2poly_le135(rboxes):
+    """Convert oriented bounding boxes to polygons.
+    Args:
+        obbs (torch.Tensor): [x_ctr,y_ctr,w,h,angle]
+    Returns:
+        polys (torch.Tensor): [x0,y0,x1,y1,x2,y2,x3,y3]
+    """
+    N = rboxes.shape[0]
+    if N == 0:
+        return rboxes.new_zeros((rboxes.size(0), 8))
+    x_ctr, y_ctr, width, height, angle = rboxes.select(1, 0), rboxes.select(
+        1, 1), rboxes.select(1, 2), rboxes.select(1, 3), rboxes.select(1, 4)
+    tl_x, tl_y, br_x, br_y = \
+        -width * 0.5, -height * 0.5, \
+        width * 0.5, height * 0.5
+    rects = torch.stack([tl_x, br_x, br_x, tl_x, tl_y, tl_y, br_y, br_y],
+                        dim=0).reshape(2, 4, N).permute(2, 0, 1)
+    sin, cos = torch.sin(angle), torch.cos(angle)
+    M = torch.stack([cos, -sin, sin, cos], dim=0).reshape(2, 2,
+                                                          N).permute(2, 0, 1)
+    polys = M.matmul(rects).permute(2, 1, 0).reshape(-1, N).transpose(1, 0)
+    polys[:, ::2] += x_ctr.unsqueeze(1)
+    polys[:, 1::2] += y_ctr.unsqueeze(1)
+    return polys.contiguous()
+
+
+def obb2poly_le90(rboxes):
+    """Convert oriented bounding boxes to polygons with Tensor.
+    Args:
+        obbs (torch.Tensor): [x_ctr,y_ctr,w,h,angle]
+    Returns:
+        polys (torch.Tensor): [x0,y0,x1,y1,x2,y2,x3,y3]
+    """
+    N = rboxes.shape[0]
+    if N == 0:
+        return rboxes.new_zeros((rboxes.size(0), 8))
+    x_ctr, y_ctr, width, height, angle = rboxes.select(1, 0), rboxes.select(
+        1, 1), rboxes.select(1, 2), rboxes.select(1, 3), rboxes.select(1, 4)
+    tl_x, tl_y, br_x, br_y = \
+        -width * 0.5, -height * 0.5, \
+        width * 0.5, height * 0.5
+    rects = torch.stack([tl_x, br_x, br_x, tl_x, tl_y, tl_y, br_y, br_y],
+                        dim=0).reshape(2, 4, N).permute(2, 0, 1)
+    sin, cos = torch.sin(angle), torch.cos(angle)
+    M = torch.stack([cos, -sin, sin, cos], dim=0).reshape(2, 2,
+                                                          N).permute(2, 0, 1)
+    polys = M.matmul(rects).permute(2, 1, 0).reshape(-1, N).transpose(1, 0)
+    polys[:, ::2] += x_ctr.unsqueeze(1)
+    polys[:, 1::2] += y_ctr.unsqueeze(1)
+    return polys.contiguous()
+
+
+# for gaussian target
+def gaussian2D(radius, sigma=1, dtype=torch.float32, device='cpu'):
+    """Generate 2D gaussian kernel.
+    Args:
+        radius (int): Radius of gaussian kernel.
+        sigma (int): Sigma of gaussian function. Default: 1.
+        dtype (torch.dtype): Dtype of gaussian tensor. Default: torch.float32.
+        device (str): Device of gaussian tensor. Default: 'cpu'.
+    Returns:
+        h (Tensor): Gaussian kernel with a
+            ``(2 * radius + 1) * (2 * radius + 1)`` shape.
+    """
+    x = torch.arange(
+        -radius, radius + 1, dtype=dtype, device=device).view(1, -1)
+    y = torch.arange(
+        -radius, radius + 1, dtype=dtype, device=device).view(-1, 1)
+    
+    h = (-(x * x + y * y) / (2 * sigma * sigma)).exp()
+    
+    h[h < torch.finfo(h.dtype).eps * h.max()] = 0
+    return h
+
+
+def gen_gaussian_target(heatmap, center, radius, k=1):
+    """Generate 2D gaussian heatmap.
+    Args:
+        heatmap (Tensor): Input heatmap, the gaussian kernel will cover on
+            it and maintain the max value.
+        center (list[int]): Coord of gaussian kernel's center.
+        radius (int): Radius of gaussian kernel.
+        k (int): Coefficient of gaussian kernel. Default: 1.
+    Returns:
+        out_heatmap (Tensor): Updated heatmap covered by gaussian kernel.
+
+    Notes:
+        When two gaussian kernel meet, max value will be preserved.
+    """
+    diameter = 2 * radius + 1
+    gaussian_kernel = gaussian2D(
+        radius, sigma=diameter, dtype=heatmap.dtype, device=heatmap.device)
+    
+    x, y = center
+    
+    height, width = heatmap.shape[:2]
+    
+    left, right = min(x, radius), min(width - x, radius + 1)
+    top, bottom = min(y, radius), min(height - y, radius + 1)
+    
+    masked_heatmap = heatmap[y - top:y + bottom, x - left:x + right]
+    masked_gaussian = gaussian_kernel[radius - top:radius + bottom,
+                      radius - left:radius + right]
+    out_heatmap = heatmap
+    out_heatmap[y - top:y + bottom, x - left:x + right] = (
+        torch.max(masked_heatmap, masked_gaussian * k)
+    )
+    return out_heatmap
