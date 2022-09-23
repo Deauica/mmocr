@@ -5,6 +5,7 @@ inner_channels = 256
 model_dim = 512
 
 model = dict(
+    type='FewNet',
     backbone=dict(
         type='mmdet.ResNet',
         depth=50,
