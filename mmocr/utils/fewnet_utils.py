@@ -332,11 +332,8 @@ def poly2obb_np_le135(poly):
                     (pt1[1] - pt2[1]))
     edge2 = np.sqrt((pt2[0] - pt3[0]) * (pt2[0] - pt3[0]) + (pt2[1] - pt3[1]) *
                     (pt2[1] - pt3[1]))
-    # if edge1 < 2 or edge2 < 2:
-    #     return
-    assert edge1 >= 2 and edge2 >= 2, (
-        "edge1: {}, edge2: {}".format(edge1, edge2)
-    )
+    if edge1 < 2 or edge2 < 2:
+        return
     
     width = max(edge1, edge2)
     height = min(edge1, edge2)

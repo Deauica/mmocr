@@ -86,7 +86,21 @@ def cost_rbox_func(out_boxes: Tensor, tgt_boxes: Tensor, **kwargs):
 @MODELS.register_module()
 class FewNetModuleLoss(nn.Module):
     """
-    Currently, the meaning of `need_norm_boxes` is a little different from the one before.
+    Loss for FewNet Module.
+    
+    Args:
+        weight_cost_{logits, boxes}: cost for the weight of HungarianMatcher.
+        weight_loss_{score_map, logits, rbox}: loss for the weight of loss.
+        
+        max_target_num: utilized for gen_target_matched. intermediate variable.
+        angle_version: version for current angle.
+        rbox_loss_type, rbox_fun, rbox_tau: gwd_loss arguments.
+        need_scaled_gwd: whether to utilized scaled gwd loss.
+        
+        strides: strides for the feature map. utilized in target generation.
+        need_norm_boxes: True for norm boxes in targets and false otherwise.
+        min_radius_limit, coef_gaussian, max_num_gau_center: hyper-parameter for gaussian targets.
+        fg_value, bg_value: foreground and background default value.
     """
     def __init__(
             self,
@@ -269,18 +283,21 @@ class FewNetModuleLoss(nn.Module):
         sizes = [len(elem[0]) for elem in indices]
         batch_idx = torch.cat([torch.full((s,), i) for i, s in enumerate(sizes)])
         src_idx = torch.cat([src_indice for (src_indice, _) in indices])
-    
-        batch_idx_unmatched = torch.cat(
-            [torch.full((s * ratio,), i) for i, s in enumerate(sizes)]
-        )
+        
+        # unmatched
         t = torch.ones(num_selected_features)
-        src_idx_unmatched = torch.cat([
+        src_idx_unmatched_list = [
             torch.nonzero(
                 torch.scatter(t.to(src_indice.device), 0, src_indice, 0)
             ).flatten()[: sizes[i] * ratio]
             for i, (src_indice, _) in enumerate(indices)
-        ])
-    
+        ]
+        src_idx_unmatched = torch.cat(src_idx_unmatched_list)
+        unmatched_sizes = [len(t) for t in src_idx_unmatched_list]
+        batch_idx_unmatched = torch.cat(
+            [torch.full((s,), i) for i, s in enumerate(unmatched_sizes)]
+        )
+        
         matched_t = OrderedDict()  # [num_tgt_boxes, ...]
         unmatched_t = OrderedDict()
         for k in outputs.keys():
@@ -479,11 +496,7 @@ class MakeFewNetTargets(object):
         """
         results = OrderedDict()
     
-        # step 0. filter targets based on the ignored.
-        # obtaining gt_instances for simplicity in the following code snippet.
-        for i, target in enumerate(targets):
-            valid_pos = [not flag for flag in targets[i].gt_instances.ignored]
-            targets[i].gt_instances = targets[i].gt_instances[valid_pos]  # bool index
+        # step 0. obtaining gt_instances for simplicity in the following code snippet.
         gt_instances = [target.gt_instances for target in targets]
     
         # step 1. collect single targets
@@ -532,12 +545,17 @@ class MakeFewNetTargets(object):
     
         # step 0. generate rotated boxes for single data sample.
         rboxes = []
-        for _, polygon in enumerate(gt_instances["polygons"]):
+        poly_valid_pos = torch.full([len(gt_instances)], True)
+        
+        for i, polygon in enumerate(gt_instances["polygons"]):
             rect = cv2.minAreaRect(polygon.reshape(-1, 2).astype(np.int32))
             polygon = cv2.boxPoints(rect)
             polygon = np.reshape(polygon, [8])
             rbox = poly2obb_np(polygon, version=self.angle_version)
-            rboxes.append(rbox)
+            if rbox is None:
+                poly_valid_pos[i] = False
+            else:
+                rboxes.append(rbox)
         rboxes = np.array(rboxes, dtype=np.float32).reshape([-1, 5])  # [cx, cy, w, h, theta]
         if self.need_norm_boxes:
             max_H, max_W = img_shape
@@ -545,6 +563,10 @@ class MakeFewNetTargets(object):
             rboxes[:, 1::2] = rboxes[:, 1::2] / max_H
         boxes, angles = rboxes[:, :4], rboxes[:, -1:]
         boxes, angles = _to_tensor(boxes), _to_tensor(angles)
+        
+        # update gt_instances to filter out too small text instances
+        gt_instances = gt_instances[poly_valid_pos]  # valid_pos, bool type
+        assert len(gt_instances) == len(boxes)
         
         # step 1. score_map and score_mask for single data sample
         assert all(length % self.strides[-1] == 0 for length in img_shape), (

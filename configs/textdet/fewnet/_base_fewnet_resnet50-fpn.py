@@ -1,6 +1,9 @@
 # In this file,
 # define model, train_pipeline, test_pipeline
 
+inner_channels = 256
+model_dim = 512
+
 model = dict(
     type='FewNet',
     backbone=dict(  # Apdapted from DBNet
@@ -17,18 +20,21 @@ model = dict(
         stage_with_dcn=(False, True, True, True)),
     
     neck=dict(
-        type='FPEM_FFM', in_channels=[256, 512, 1024, 2048]),  # Adapted from PANet
+        type='mmdet.FPN', in_channels=[256, 512, 1024, 2048],
+        out_channels=inner_channels, num_outs=4
+    ),  # Adapted from PANet
     
     det_head=dict(  # Head, ModuleLoss, PostProcessor should be defined here
         type='FewNetHead',  # User-defined
-        target_mode="rbox", is_coord_norm=True, inner_channels=256, model_dim=256,
+        target_mode="rbox", is_coord_norm=True,
+        inner_channels=inner_channels, model_dim=model_dim,
 
         feature_sampling=dict(
-            c=256, nk=(256, 128, 64)  
+            c=inner_channels, nk=(256, 128, 64)
             # coord_conv, constrained_deformable_module is None currently
         ),  # c == inner_channels
         feature_grouping=dict(
-            c=256, num_encoder_layer=4, model_dim=512, nhead=8,
+            c=inner_channels, num_encoder_layer=4, model_dim=model_dim, nhead=8,
             pe_type="sin_cos", num_dims=3
         ),
 
