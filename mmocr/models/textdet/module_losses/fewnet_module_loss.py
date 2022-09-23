@@ -106,7 +106,7 @@ class FewNetModuleLoss(nn.Module):
             self,
             weight_cost_logits=1.0, weight_cost_boxes=1.0,
             weight_loss_score_map=1.0, weight_loss_logits=1.0, weight_loss_rbox=1.0,
-            max_target_num=100, angle_version="le135",
+            max_target_num=200, angle_version="le135",
             rbox_loss_type="gwd", rbox_fun="log1p", rbox_tau=3.0,
             need_norm_boxes=False, need_scaled_gwd=False,
             strides=(8, 16, 32),
