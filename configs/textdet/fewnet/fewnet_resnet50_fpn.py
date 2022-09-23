@@ -11,9 +11,11 @@ randomness = dict(seed=20)
 # optimizer
 optim_wrapper = dict(
     optimizer=dict(type='AdamW', lr=1e-4, weight_decay=1e-4),
-    custom_keys={
-        "feature_grouping": dict(lr=5e-4)
-    }
+    paramwise_cfg=dict(
+        custom_keys={
+            "feature_grouping": dict(lr=5e-4)
+        }
+    )
 )
 train_cfg = dict(type='EpochBasedTrainLoop', max_epochs=400, val_interval=20)
 param_scheduler = [
